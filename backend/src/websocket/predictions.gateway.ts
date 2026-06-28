@@ -21,8 +21,8 @@ export class PredictionsGateway {
     this.server.emit('model:trained', version);
   }
 
-  emitPrediction(items: unknown) {
-    this.server.emit('prediction:new', items);
+  emitPrediction(payload: { back3_items: unknown; last2_items: unknown }) {
+    this.server.emit('prediction:new', payload);
   }
 
   @SubscribeMessage('ping')

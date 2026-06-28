@@ -3,11 +3,14 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { ConfigService } from '@nestjs/config';
 
-export interface DrawDto { date: string; back3: string; }
+export interface DrawDto { date: string; back3: string; last2?: string; }
 export interface PredictItem {
   rank: number; number: string; score: number;
   lr_score: number; rf_score: number; gb_score: number;
   confidence: string; top_features: Array<{ name: string; value: number; importance: number }>;
+}
+export interface Last2Item {
+  rank: number; number: string; score: number; confidence: string;
 }
 
 /**
@@ -48,7 +51,7 @@ export class MlService {
   }
 
   predict(draws: DrawDto[], topN = 20) {
-    return this.post<PredictItem[]>('/predict', { draws, top_n: topN });
+    return this.post<{ items: PredictItem[]; last2_items: Last2Item[] }>('/predict', { draws, top_n: topN });
   }
 
   backtest(draws: DrawDto[]) {

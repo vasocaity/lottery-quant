@@ -45,7 +45,8 @@ export class PredictionsService {
   /** Score all combos and persist + broadcast the top-N. */
   async predict(topN = 20) {
     const draws = await this.draws.forMl();
-    const items = await this.ml.predict(draws, topN);
+    const result = await this.ml.predict(draws, topN);
+    const { items, last2_items } = result;
 
     const active = await this.prisma.modelVersion.findFirst({
       where: { isActive: true },
@@ -55,12 +56,12 @@ export class PredictionsService {
     const prediction = await this.prisma.prediction.create({
       data: {
         modelVersionId: active?.id ?? 0,
-        items: items as any,
+        items: { back3_items: items, last2_items } as any,
       },
     });
 
-    this.gateway.emitPrediction(items);
-    return { id: prediction.id, items };
+    this.gateway.emitPrediction({ back3_items: items, last2_items });
+    return { id: prediction.id, items, last2_items };
   }
 
   async backtest() {
@@ -72,8 +73,15 @@ export class PredictionsService {
     return this.ml.featureImportance();
   }
 
-  latest() {
-    return this.prisma.prediction.findFirst({ orderBy: { createdAt: 'desc' } });
+  async latest() {
+    const pred = await this.prisma.prediction.findFirst({ orderBy: { createdAt: 'desc' } });
+    if (!pred) return null;
+    const stored = pred.items as any;
+    return {
+      id: pred.id,
+      items: stored?.back3_items ?? (Array.isArray(stored) ? stored : []),
+      last2_items: stored?.last2_items ?? [],
+    };
   }
 
   /** Called after a new official draw is added: retrain + re-predict automatically. */

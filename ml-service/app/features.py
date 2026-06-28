@@ -30,7 +30,7 @@ FEATURE_NAMES: List[str] = [
     # statistical
     "f_entropy", "f_is_hot", "f_is_cold", "f_hotness_trend",
     # bayesian / time
-    "f_bayes_post", "f_month_freq", "f_draw_seq",
+    "f_bayes_post", "f_month_freq",
 ]
 
 
@@ -148,7 +148,6 @@ def extract_features(
         target_month = datetime.utcnow().month
     same_month = [series[i] for i in range(n) if datetime.fromisoformat(dates[i]).month == target_month]
     month_freq = same_month.count(s) / max(len(same_month), 1)
-    draw_seq = n / 300.0
 
     # ---------- 11. bayesian ----------
     prior = 1 / 1000
@@ -173,7 +172,7 @@ def extract_features(
         "f_entropy": max(0, min(entropy, 1.585)) / 1.585,
         "f_is_hot": is_hot, "f_is_cold": is_cold, "f_hotness_trend": math.tanh(hotness_trend * 100),
         "f_bayes_post": min(bayes_post * 10000, 1),
-        "f_month_freq": month_freq, "f_draw_seq": draw_seq,
+        "f_month_freq": month_freq, 
     }
 
 

@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
-import type { PredictItem } from '../api/client';
+import type { PredictItem, Last2Item } from '../api/client';
 
 const WS = import.meta.env.VITE_WS_URL ?? 'http://localhost:3001/live';
 
 export interface Progress { step: string; pct: number; }
+export interface LivePrediction { back3_items: PredictItem[]; last2_items: Last2Item[]; }
 
 /** Subscribes to live training progress + new predictions via socket.io. */
 export function useLiveUpdates() {
   const [progress, setProgress] = useState<Progress | null>(null);
-  const [livePrediction, setLivePrediction] = useState<PredictItem[] | null>(null);
+  const [livePrediction, setLivePrediction] = useState<LivePrediction | null>(null);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
@@ -17,7 +18,7 @@ export function useLiveUpdates() {
     socket.on('connect', () => setConnected(true));
     socket.on('disconnect', () => setConnected(false));
     socket.on('training:progress', (p: Progress) => setProgress(p));
-    socket.on('prediction:new', (items: PredictItem[]) => setLivePrediction(items));
+    socket.on('prediction:new', (payload: LivePrediction) => setLivePrediction(payload));
     socket.on('model:trained', () => setProgress({ step: 'Model trained', pct: 100 }));
     return () => { socket.disconnect(); };
   }, []);

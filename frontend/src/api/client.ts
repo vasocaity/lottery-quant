@@ -16,6 +16,9 @@ export interface PredictItem {
   confidence: string;
   top_features: Array<{ name: string; value: number; importance: number }>;
 }
+export interface Last2Item {
+  rank: number; number: string; score: number; confidence: string;
+}
 
 export const api = {
   listDraws: () => req<Draw[]>('/draws'),
@@ -23,9 +26,9 @@ export const api = {
     req<Draw>('/draws', { method: 'POST', body: JSON.stringify(d) }),
   trainModel: () => req('/predictions/train', { method: 'POST' }),
   runPrediction: (topN = 20) =>
-    req<{ id: number; items: PredictItem[] }>(`/predictions/run?topN=${topN}`, { method: 'POST' }),
+    req<{ id: number; items: PredictItem[]; last2_items: Last2Item[] }>(`/predictions/run?topN=${topN}`, { method: 'POST' }),
   backtest: () => req<{ results: any[]; optimized_weights: any }>('/predictions/backtest'),
   featureImportance: () =>
     req<{ importances: Record<string, number>; weights: any }>('/predictions/feature-importance'),
-  latest: () => req<{ items: PredictItem[] } | null>('/predictions/latest'),
+  latest: () => req<{ id: number; items: PredictItem[]; last2_items: Last2Item[] } | null>('/predictions/latest'),
 };

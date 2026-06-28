@@ -23,48 +23,46 @@ MODEL_PATH = os.path.join(MODEL_DIR, "ensemble.pkl")
 # ----------------------------------------------------------------------------
 # training-data construction
 # ----------------------------------------------------------------------------
+NEG_PER_DRAW = 6
+
+
 def build_training_data(draws: List[Dict]) -> Tuple[np.ndarray, np.ndarray]:
-    """draws: list of {date, back3} sorted oldest->newest.
-    Positive = a number that actually appeared (features as of just before it
-    appeared). Negative = numbers that never appeared + random hard negatives.
-    """
     series = [d["back3"] for d in draws]
     dates = [d["date"] for d in draws]
     X, y = [], []
 
     appeared = set(series)
     seen = set()
+    
     for i, num in enumerate(series):
         if num in seen or i < 5:
             seen.add(num)
             continue
         seen.add(num)
+        
         ctx_series = series[:i]
         ctx_dates = dates[:i]
         month = datetime.fromisoformat(dates[i]).month
+        
+        # 1. Positive class (เลขที่ออกในงวดนั้น)
         feat = extract_features(int(num), ctx_series, ctx_dates, month)
         X.append(vectorize(feat))
         y.append(1)
 
-    # negatives: never appeared
-    for i in range(1000):
-        ns = str(i).zfill(3)
-        if ns not in appeared:
-            feat = extract_features(i, series, dates)
-            X.append(vectorize(feat))
-            y.append(0)
-
-    # hard negatives: random non-winners (balances class ratio a bit)
-    rng = np.random.default_rng(42)
-    for _ in range(len(appeared) * 2):
-        n = int(rng.integers(0, 1000))
-        if str(n).zfill(3) not in appeared:
-            feat = extract_features(n, series, dates)
-            X.append(vectorize(feat))
-            y.append(0)
+        # 2. Negative class (สร้างเลขที่สุ่มไม่ถูกรางวัล ณ งวด i นั้น ๆ ด้วย เพื่อให้ context เท่ากัน)
+        # สุ่มเลขที่ไม่ได้ออกในงวดนี้มาเป็นตัวอย่างฝั่ง Negative แทนการดึง Full History นอกลูป
+        rng = np.random.default_rng(42 + i) # เปลี่ยน seed ตามงวดเพื่อความหลากหลาย
+        neg_count = 0
+        while neg_count < 2: # สุ่มเลขลบมา 2 ตัวต่องวดเพื่อ Balance
+            rand_num = int(rng.integers(0, 1000))
+            rand_num_str = str(rand_num).zfill(3)
+            if rand_num_str != num: # ต้องไม่ใช่เลขที่ออกรางวัลในงวดนี้
+                feat_neg = extract_features(rand_num, ctx_series, ctx_dates, month)
+                X.append(vectorize(feat_neg))
+                y.append(0)
+                neg_count += 1
 
     return np.array(X), np.array(y)
-
 
 # ----------------------------------------------------------------------------
 # ensemble bundle
@@ -179,6 +177,119 @@ def rolling_backtest(draws: List[Dict]) -> Dict:
     tot = tot_lr + tot_rf + tot_gb or 1
     optimized = {"lr": tot_lr / tot, "rf": tot_rf / tot, "gb": tot_gb / tot}
     return {"results": results, "optimized_weights": optimized}
+
+
+# ----------------------------------------------------------------------------
+# walk-forward backtest with a uniform-random baseline + significance test
+# ----------------------------------------------------------------------------
+def binom_p_value(observed: int, n: int, p: float) -> float:
+    """One-sided P(Binomial(n, p) >= observed): probability of getting at least
+    `observed` hits by pure chance. Small => the result is unlikely under random."""
+    if n <= 0:
+        return 1.0
+    observed = max(0, min(observed, n))
+    try:
+        from scipy.stats import binom
+        return float(binom.sf(observed - 1, n, p))
+    except Exception:
+        # normal approximation fallback (no scipy)
+        import math as _m
+        mean = n * p
+        var = n * p * (1 - p) or 1e-9
+        z = (observed - 0.5 - mean) / _m.sqrt(var)  # continuity correction
+        return 0.5 * _m.erfc(z / _m.sqrt(2))
+
+
+def summarize_walk_forward(hits: Dict[int, int], n_pred: int, space: int) -> Dict:
+    """Turn raw per-k hit counts into a baseline-relative, significance-tested report.
+
+    For a uniform-random draw, a fixed top-k list contains the winner with
+    probability k/space, so the null model is Binomial(n_pred, k/space).
+    """
+    per_k = []
+    for k in sorted(hits):
+        h = hits[k]
+        baseline_rate = k / space
+        expected = n_pred * baseline_rate
+        hit_rate = (h / n_pred) if n_pred else 0.0
+        per_k.append({
+            "k": k,
+            "hits": h,
+            "n_predictions": n_pred,
+            "hit_rate_pct": round(hit_rate * 100, 2),
+            "baseline_rate_pct": round(baseline_rate * 100, 2),
+            "expected_hits": round(expected, 2),
+            "lift": round(hit_rate / baseline_rate, 3) if baseline_rate else None,
+            "p_value": round(binom_p_value(h, n_pred, baseline_rate), 4),
+            "beats_random_p05": bool(binom_p_value(h, n_pred, baseline_rate) < 0.05),
+        })
+    return {"space": space, "n_predictions": n_pred, "by_k": per_k}
+
+
+def _walk_forward_core(draws, series, dates, space, fit_fn, score_fn,
+                       start_frac=0.6, retrain_every=10, ks=(1, 5, 10, 20)) -> Dict:
+    """Expanding-window, one-step-ahead backtest.
+
+    For each draw i (from start onward) the model is trained only on draws[:i]
+    (refit every `retrain_every` steps to keep it tractable) and used to rank all
+    `space` combinations; we record whether the actual winner landed in the top-k.
+    Every prediction is strictly out-of-sample.
+    """
+    n = len(series)
+    start = max(10, int(n * start_frac))
+    hits = {k: 0 for k in ks}
+    n_pred = 0
+    model = None
+    steps_since_fit = 0
+
+    for i in range(start, n):
+        if model is None or steps_since_fit >= retrain_every:
+            model = fit_fn(draws[:i])
+            steps_since_fit = 0
+        steps_since_fit += 1
+        if model is None:
+            continue
+
+        ctx_series, ctx_dates = series[:i], dates[:i]
+        scores = score_fn(model, ctx_series, ctx_dates)
+        order = np.argsort(scores)[::-1]
+        winner = int(series[i])
+        # rank of the winner (0-based); cheaper than building k sets
+        winner_rank = int(np.where(order == winner)[0][0])
+        for k in ks:
+            if winner_rank < k:
+                hits[k] += 1
+        n_pred += 1
+
+    report = summarize_walk_forward(hits, n_pred, space)
+    report["start_index"] = start
+    report["retrain_every"] = retrain_every
+    return report
+
+
+def _fit_ensemble(ctx_draws: List[Dict]) -> "EnsembleBundle | None":
+    X, y = build_training_data(ctx_draws)
+    if len(X) == 0 or len(set(y)) < 2:
+        return None
+    bundle = EnsembleBundle()  # default weights; no nested reweighting
+    bundle.fit(X, y)
+    return bundle
+
+
+def walk_forward_backtest(draws: List[Dict], start_frac=0.6, retrain_every=10,
+                          ks=(1, 5, 10, 20)) -> Dict:
+    """Honest out-of-sample evaluation of the back3 ensemble vs a random baseline."""
+    draws = sorted(draws, key=lambda d: d["date"])
+    series = [d["back3"] for d in draws]
+    dates = [d["date"] for d in draws]
+
+    def score_fn(bundle, ctx_series, ctx_dates):
+        rows = np.array([vectorize(extract_features(j, ctx_series, ctx_dates))
+                         for j in range(1000)])
+        return bundle.predict_ensemble(rows)
+
+    return _walk_forward_core(draws, series, dates, 1000, _fit_ensemble, score_fn,
+                              start_frac, retrain_every, ks)
 
 
 # ----------------------------------------------------------------------------

@@ -36,7 +36,7 @@ Feature extraction for two-digit candidates (00–99). Features:
 | Gap | draws-since-last, overdue ratio, avg gap, gap z-score |
 | Pair | the one digit-pair (d0+d1), mirror (reverse), transition d0→d0′, d1→d1′ |
 | Pattern | is_double (d0==d1), is_consecutive, digit sum, digital root |
-| Time | month frequency, draw_seq |
+| Time | month frequency |
 | Hot/Cold | is_hot (appeared in last 10), is_cold (not in last 30) |
 
 Single `FEATURE_NAMES_2D` list in canonical order. `vectorize_2d(feat)` converts dict → numpy row.

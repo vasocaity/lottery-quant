@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { api, type Draw, type PredictItem } from "./api/client";
+import { api, type Draw, type PredictItem, type Last2Item } from "./api/client";
 import { useLiveUpdates } from "./hooks/useLiveUpdates";
 
 /**
@@ -11,7 +11,9 @@ import { useLiveUpdates } from "./hooks/useLiveUpdates";
 export default function App() {
   const [draws, setDraws] = useState<Draw[]>([]);
   const [top20, setTop20] = useState<PredictItem[]>([]);
+  const [last2Top10, setLast2Top10] = useState<Last2Item[]>([]);
   const [tab, setTab] = useState("rankings");
+  const [rankingMode, setRankingMode] = useState<"back3" | "last2">("back3");
   const [busy, setBusy] = useState<string | null>(null);
   const [backtest, setBacktest] = useState<any>(null);
   const [weights, setWeights] = useState({ lr: 0.25, rf: 0.4, gb: 0.35 });
@@ -21,7 +23,10 @@ export default function App() {
 
   // Live prediction pushed over WS overrides local state
   useEffect(() => {
-    if (livePrediction) setTop20(livePrediction);
+    if (livePrediction) {
+      setTop20(livePrediction.back3_items ?? []);
+      setLast2Top10(livePrediction.last2_items ?? []);
+    }
   }, [livePrediction]);
 
   const loadDraws = useCallback(async () => {
@@ -31,6 +36,7 @@ export default function App() {
   const loadLatest = useCallback(async () => {
     const latest = await api.latest();
     if (latest?.items) setTop20(latest.items);
+    if (latest?.last2_items) setLast2Top10(latest.last2_items);
   }, []);
 
   useEffect(() => {
@@ -43,6 +49,7 @@ export default function App() {
     await api.trainModel();
     const res = await api.runPrediction(20);
     setTop20(res.items);
+    setLast2Top10(res.last2_items ?? []);
     const fi = await api.featureImportance();
     setWeights(fi.weights);
     setBusy(null);
@@ -61,10 +68,10 @@ export default function App() {
     setBusy("Adding draw + retraining...");
     await api.addDraw(newDraw);
     await loadDraws();
-    // adding a draw triggers retrain server-side; refresh predictions
     await api.trainModel();
     const res = await api.runPrediction(20);
     setTop20(res.items);
+    setLast2Top10(res.last2_items ?? []);
     setNewDraw({ date: "", back3: "", last2: "" });
     setBusy(null);
   };
@@ -120,36 +127,75 @@ export default function App() {
         </nav>
 
         {tab === "rankings" && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 10 }}>
-            {top20.length === 0 && <div style={{ color: "#6a8ab8", fontSize: 12 }}>No predictions yet — click "Train + Predict".</div>}
-            {top20.map((item, idx) => (
-              <div key={item.number} style={{ background: "#0a1628", border: `1px solid ${idx < 3 ? "#2a5a8b" : "#1a3a6b"}`, borderRadius: 10, padding: "12px 14px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: 26, fontWeight: 900, color: sc(item.score), letterSpacing: 3 }}>{item.number}</span>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ color: sc(item.score), fontWeight: 700 }}>{pct(item.score)}</div>
-                    <div style={{ fontSize: 8, color: "#6a8ab8" }}>/100</div>
+          <div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+              {(["back3", "last2"] as const).map((mode) => (
+                <button key={mode} onClick={() => setRankingMode(mode)} style={{
+                  background: rankingMode === mode ? "#0d2444" : "transparent",
+                  border: `1px solid ${rankingMode === mode ? "#4a9eff" : "#1a3a6b"}`,
+                  color: rankingMode === mode ? "#4a9eff" : "#6a8ab8",
+                  borderRadius: 5, padding: "4px 12px", cursor: "pointer",
+                  fontSize: 11, fontFamily: "inherit",
+                }}>
+                  {mode === "back3" ? "3-Digit (back3)" : "2-Digit (last2)"}
+                </button>
+              ))}
+            </div>
+
+            {rankingMode === "back3" && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 10 }}>
+                {top20.length === 0 && <div style={{ color: "#6a8ab8", fontSize: 12 }}>No predictions yet — click "Train + Predict".</div>}
+                {top20.map((item, idx) => (
+                  <div key={item.number} style={{ background: "#0a1628", border: `1px solid ${idx < 3 ? "#2a5a8b" : "#1a3a6b"}`, borderRadius: 10, padding: "12px 14px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 26, fontWeight: 900, color: sc(item.score), letterSpacing: 3 }}>{item.number}</span>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ color: sc(item.score), fontWeight: 700 }}>{pct(item.score)}</div>
+                        <div style={{ fontSize: 8, color: "#6a8ab8" }}>/100</div>
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 9, color: "#4a9eff" }}>{item.confidence}</span>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, marginTop: 8 }}>
+                      {[["LR", item.lr_score], ["RF", item.rf_score], ["GB", item.gb_score]].map(([l, v]) => (
+                        <div key={l as string} style={{ background: "#050d1a", borderRadius: 4, padding: "3px 0", textAlign: "center" }}>
+                          <div style={{ color: "#6a8ab8", fontSize: 8 }}>{l}</div>
+                          <div style={{ color: sc(v as number), fontSize: 11, fontWeight: 700 }}>{pct(v as number)}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                      {item.top_features.slice(0, 3).map((f) => (
+                        <div key={f.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#6a8ab8" }}>
+                          <span>▸ {f.name.replace("f_", "")}</span>
+                          <span style={{ color: "#4a9eff" }}>{(f.importance * 100).toFixed(1)}%</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-                <span style={{ fontSize: 9, color: "#4a9eff" }}>{item.confidence}</span>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, marginTop: 8 }}>
-                  {[["LR", item.lr_score], ["RF", item.rf_score], ["GB", item.gb_score]].map(([l, v]) => (
-                    <div key={l as string} style={{ background: "#050d1a", borderRadius: 4, padding: "3px 0", textAlign: "center" }}>
-                      <div style={{ color: "#6a8ab8", fontSize: 8 }}>{l}</div>
-                      <div style={{ color: sc(v as number), fontSize: 11, fontWeight: 700 }}>{pct(v as number)}</div>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ marginTop: 8 }}>
-                  {item.top_features.slice(0, 3).map((f) => (
-                    <div key={f.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#6a8ab8" }}>
-                      <span>▸ {f.name.replace("f_", "")}</span>
-                      <span style={{ color: "#4a9eff" }}>{(f.importance * 100).toFixed(1)}%</span>
-                    </div>
-                  ))}
-                </div>
+                ))}
               </div>
-            ))}
+            )}
+
+            {rankingMode === "last2" && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 10 }}>
+                {last2Top10.length === 0 && <div style={{ color: "#6a8ab8", fontSize: 12 }}>No 2-digit predictions yet — click "Train + Predict".</div>}
+                {last2Top10.map((item, idx) => (
+                  <div key={item.number} style={{ background: "#0a1628", border: `1px solid ${idx < 3 ? "#2a5a8b" : "#1a3a6b"}`, borderRadius: 10, padding: "12px 14px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 32, fontWeight: 900, color: sc(item.score), letterSpacing: 4 }}>{item.number}</span>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ color: sc(item.score), fontWeight: 700 }}>{pct(item.score)}</div>
+                        <div style={{ fontSize: 8, color: "#6a8ab8" }}>/100</div>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 9, color: "#4a9eff" }}>{item.confidence}</span>
+                      <span style={{ fontSize: 9, color: "#6a8ab8" }}>#{item.rank}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

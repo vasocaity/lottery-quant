@@ -35,10 +35,12 @@ services:
       ML_SERVICE_URL: "http://ml-service:8000"
       FRONTEND_URL: "http://localhost:5173"
       PORT: 3001
+      NO_PROXY: "ml-service,postgres,localhost,127.0.0.1"
+      no_proxy: "ml-service,postgres,localhost,127.0.0.1"
     ports: ["3001:3001"]
     depends_on:
       postgres: { condition: service_healthy }
-      ml-service: { condition: service_started }
+      ml-service: { condition: service_healthy }
 
   frontend:
     build: ./frontend

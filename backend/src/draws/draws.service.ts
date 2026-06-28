@@ -22,12 +22,13 @@ export class DrawsService {
     });
   }
 
-  /** Returns draws as {date, back3} pairs ready for the ML service. */
-  async forMl(): Promise<{ date: string; back3: string }[]> {
+  /** Returns draws as {date, back3, last2} triples ready for the ML service. */
+  async forMl(): Promise<{ date: string; back3: string; last2: string }[]> {
     const rows = await this.findAll();
     return rows.map((r) => ({
       date: r.date.toISOString().slice(0, 10),
       back3: r.back3,
+      last2: r.last2 ?? '',
     }));
   }
 
