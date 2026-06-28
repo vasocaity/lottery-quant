@@ -1,0 +1,52 @@
+// PostgreSQL schema via Prisma ORM
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// One official lottery draw result.
+model Draw {
+  id        Int      @id @default(autoincrement())
+  date      DateTime @unique @db.Date
+  back3     String   @db.VarChar(3)
+  last2     String?  @db.VarChar(2)
+  firstPrize String? @map("first_prize") @db.VarChar(6)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([date])
+  @@map("draws")
+}
+
+/// A snapshot of a trained model (metadata only; the .pkl lives on the ML service volume).
+model ModelVersion {
+  id          Int      @id @default(autoincrement())
+  trainedAt   DateTime @map("trained_at")
+  nDraws      Int      @map("n_draws")
+  weightLr    Float    @map("weight_lr")
+  weightRf    Float    @map("weight_rf")
+  weightGb    Float    @map("weight_gb")
+  metrics     Json
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  predictions Prediction[]
+
+  @@map("model_versions")
+}
+
+/// A persisted prediction run (top-N for a given draw cycle).
+model Prediction {
+  id             Int          @id @default(autoincrement())
+  modelVersion   ModelVersion @relation(fields: [modelVersionId], references: [id])
+  modelVersionId Int          @map("model_version_id")
+  forDate        DateTime?    @map("for_date") @db.Date
+  items          Json         // ranked list: [{rank, number, score, lr, rf, gb, confidence, top_features}]
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@index([forDate])
+  @@map("predictions")
+}

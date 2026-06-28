@@ -1,0 +1,33 @@
+{
+  "name": "thai-lottery-backend",
+  "version": "1.0.0",
+  "description": "NestJS orchestration backend",
+  "scripts": {
+    "build": "nest build",
+    "start": "nest start",
+    "start:dev": "nest start --watch",
+    "start:prod": "node dist/main",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate deploy",
+    "db:seed": "ts-node prisma/seed.ts"
+  },
+  "dependencies": {
+    "@nestjs/axios": "^3.0.2",
+    "@nestjs/common": "^10.3.0",
+    "@nestjs/config": "^3.2.0",
+    "@nestjs/core": "^10.3.0",
+    "@nestjs/platform-express": "^10.3.0",
+    "@nestjs/platform-socket.io": "^10.3.0",
+    "@nestjs/websockets": "^10.3.0",
+    "@prisma/client": "^5.10.0",
+    "axios": "^1.6.7",
+    "rxjs": "^7.8.1",
+    "socket.io": "^4.7.4"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.3.0",
+    "prisma": "^5.10.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

@@ -1,0 +1,53 @@
+# Thai Lottery Quant — full stack
+#
+#   React (frontend) ──REST/WS──> NestJS (backend) ──┬──> PostgreSQL
+#                                                     └──> Python ML Service ──> ensemble.pkl
+#
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: lottery
+      POSTGRES_PASSWORD: lottery
+      POSTGRES_DB: lottery
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lottery"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  ml-service:
+    build: ./ml-service
+    ports: ["8000:8000"]
+    volumes: ["modeldata:/service/models"]   # persists the trained .pkl across restarts
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: "postgresql://lottery:lottery@postgres:5432/lottery?schema=public"
+      ML_SERVICE_URL: "http://ml-service:8000"
+      FRONTEND_URL: "http://localhost:5173"
+      PORT: 3001
+    ports: ["3001:3001"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      ml-service: { condition: service_started }
+
+  frontend:
+    build: ./frontend
+    environment:
+      VITE_API_URL: "http://localhost:3001/api"
+      VITE_WS_URL: "http://localhost:3001/live"
+    ports: ["5173:5173"]
+    depends_on: [backend]
+
+volumes:
+  pgdata:
+  modeldata:
