@@ -84,6 +84,56 @@ export class PredictionsService {
     };
   }
 
+  /**
+   * Honest scoreboard: for every draw, find the newest prediction made BEFORE
+   * that draw's date and check whether the winning number was in the list.
+   * Reports actual hits next to the hit count pure chance would produce
+   * (top-10 of 100 → 10% for last2, top-20 of 1000 → 2% for back3).
+   */
+  async hitRate() {
+    const [draws, preds] = await Promise.all([
+      this.prisma.draw.findMany({ orderBy: { date: 'asc' } }),
+      this.prisma.prediction.findMany({ orderBy: { createdAt: 'asc' } }),
+    ]);
+
+    const stats = {
+      last2: { evaluated: 0, hits: 0, k: 10, pool: 100 },
+      back3: { evaluated: 0, hits: 0, k: 20, pool: 1000 },
+    };
+
+    let i = -1;
+    for (const draw of draws) {
+      while (i + 1 < preds.length && preds[i + 1].createdAt < draw.date) i++;
+      if (i < 0) continue; // draw predates every prediction (e.g. backfilled history)
+
+      const stored = preds[i].items as any;
+      const back3Numbers: string[] = (stored?.back3_items ?? (Array.isArray(stored) ? stored : []))
+        .slice(0, stats.back3.k)
+        .map((x: any) => x.number);
+      const last2Numbers: string[] = (stored?.last2_items ?? [])
+        .slice(0, stats.last2.k)
+        .map((x: any) => x.number);
+
+      if (back3Numbers.length) {
+        stats.back3.evaluated++;
+        if (back3Numbers.includes(draw.back3)) stats.back3.hits++;
+      }
+      if (last2Numbers.length && draw.last2) {
+        stats.last2.evaluated++;
+        if (last2Numbers.includes(draw.last2)) stats.last2.hits++;
+      }
+    }
+
+    const summarize = (s: { evaluated: number; hits: number; k: number; pool: number }) => ({
+      evaluated: s.evaluated,
+      hits: s.hits,
+      hitRate: s.evaluated ? s.hits / s.evaluated : null,
+      expectedRate: s.k / s.pool,
+      expectedHits: Number(((s.evaluated * s.k) / s.pool).toFixed(2)),
+    });
+    return { last2: summarize(stats.last2), back3: summarize(stats.back3) };
+  }
+
   /** Called after a new official draw is added: retrain + re-predict automatically. */
   async onNewDraw() {
     this.logger.log('New draw detected — retraining + re-predicting');

@@ -29,4 +29,9 @@ export class PredictionsController {
   latest() {
     return this.svc.latest();
   }
+
+  @Get('hit-rate')
+  hitRate() {
+    return this.svc.hitRate();
+  }
 }

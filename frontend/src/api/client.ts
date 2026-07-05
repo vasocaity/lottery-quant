@@ -19,6 +19,11 @@ export interface PredictItem {
 export interface Last2Item {
   rank: number; number: string; score: number; confidence: string;
 }
+export interface HitRateStat {
+  evaluated: number; hits: number; hitRate: number | null;
+  expectedRate: number; expectedHits: number;
+}
+export interface HitRateReport { last2: HitRateStat; back3: HitRateStat; }
 
 export const api = {
   listDraws: () => req<Draw[]>('/draws'),
@@ -31,4 +36,5 @@ export const api = {
   featureImportance: () =>
     req<{ importances: Record<string, number>; weights: any }>('/predictions/feature-importance'),
   latest: () => req<{ id: number; items: PredictItem[]; last2_items: Last2Item[] } | null>('/predictions/latest'),
+  hitRate: () => req<HitRateReport>('/predictions/hit-rate'),
 };

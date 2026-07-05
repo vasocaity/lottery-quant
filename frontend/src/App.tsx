@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { api, type Draw, type PredictItem, type Last2Item } from "./api/client";
+import { api, type Draw, type PredictItem, type Last2Item, type HitRateReport } from "./api/client";
 import { useLiveUpdates } from "./hooks/useLiveUpdates";
 
 /**
@@ -13,7 +13,8 @@ export default function App() {
   const [top20, setTop20] = useState<PredictItem[]>([]);
   const [last2Top10, setLast2Top10] = useState<Last2Item[]>([]);
   const [tab, setTab] = useState("rankings");
-  const [rankingMode, setRankingMode] = useState<"back3" | "last2">("back3");
+  const [rankingMode, setRankingMode] = useState<"back3" | "last2">("last2");
+  const [hitRate, setHitRate] = useState<HitRateReport | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [backtest, setBacktest] = useState<any>(null);
   const [weights, setWeights] = useState({ lr: 0.25, rf: 0.4, gb: 0.35 });
@@ -39,10 +40,15 @@ export default function App() {
     if (latest?.last2_items) setLast2Top10(latest.last2_items);
   }, []);
 
+  const loadHitRate = useCallback(async () => {
+    try { setHitRate(await api.hitRate()); } catch { /* backend may be older */ }
+  }, []);
+
   useEffect(() => {
     loadDraws();
     loadLatest();
-  }, [loadDraws, loadLatest]);
+    loadHitRate();
+  }, [loadDraws, loadLatest, loadHitRate]);
 
   const handleTrain = async () => {
     setBusy("Training models...");
@@ -52,6 +58,7 @@ export default function App() {
     setLast2Top10(res.last2_items ?? []);
     const fi = await api.featureImportance();
     setWeights(fi.weights);
+    await loadHitRate();
     setBusy(null);
   };
 
@@ -73,6 +80,7 @@ export default function App() {
     setTop20(res.items);
     setLast2Top10(res.last2_items ?? []);
     setNewDraw({ date: "", back3: "", last2: "" });
+    await loadHitRate();
     setBusy(null);
   };
 
@@ -92,7 +100,7 @@ export default function App() {
           </div>
           <h1 style={{ margin: "4px 0", fontSize: 20, fontWeight: 700, color: "#fff" }}>🎯 Thai Lottery Quant Platform</h1>
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 11, color: "#6a8ab8" }}>
-            <span>Latest: <b style={{ color: "#ffcc00" }}>{last?.back3 ?? "—"}</b> {last?.date}</span>
+            <span>Latest: 2D <b style={{ color: "#ffcc00" }}>{last?.last2 ?? "—"}</b> · 3D <b style={{ color: "#ffcc00" }}>{last?.back3 ?? "—"}</b> {last?.date?.slice(0, 10)}</span>
             <span>{draws.length} draws in DB</span>
             <span>Ensemble: LR {pct(weights.lr)}% · RF {pct(weights.rf)}% · GB {pct(weights.gb)}%</span>
           </div>
@@ -128,8 +136,35 @@ export default function App() {
 
         {tab === "rankings" && (
           <div>
+            {hitRate && (
+              <div style={{ background: "#0a1628", border: "1px solid #1a3a6b", borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
+                <div style={{ color: "#4a9eff", fontSize: 10, letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>
+                  🎯 Scoreboard — actual hits vs pure chance
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10 }}>
+                  {([["2-Digit top-10", hitRate.last2], ["3-Digit top-20", hitRate.back3]] as const).map(([label, s]) => (
+                    <div key={label} style={{ background: "#050d1a", borderRadius: 6, padding: "8px 12px" }}>
+                      <div style={{ color: "#6a8ab8", fontSize: 9 }}>{label}</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: s.hits > s.expectedHits ? "#00ff88" : "#e0e8ff" }}>
+                        {s.hits} hit{s.hits === 1 ? "" : "s"} / {s.evaluated} draws
+                        <span style={{ color: "#6a8ab8", fontWeight: 400, fontSize: 11 }}>
+                          {" "}({s.hitRate != null ? (s.hitRate * 100).toFixed(1) : "—"}%)
+                        </span>
+                      </div>
+                      <div style={{ color: "#6a8ab8", fontSize: 9 }}>
+                        chance would give ~{s.expectedHits} ({(s.expectedRate * 100).toFixed(0)}%)
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ color: "#6a8ab8", fontSize: 9, marginTop: 8 }}>
+                  ⚠ Hits at or near the chance line mean the model has no edge — the walk-forward backtest confirms draws are random. Treat this as a tracked experiment, not investment advice.
+                </div>
+              </div>
+            )}
+
             <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-              {(["back3", "last2"] as const).map((mode) => (
+              {(["last2", "back3"] as const).map((mode) => (
                 <button key={mode} onClick={() => setRankingMode(mode)} style={{
                   background: rankingMode === mode ? "#0d2444" : "transparent",
                   border: `1px solid ${rankingMode === mode ? "#4a9eff" : "#1a3a6b"}`,
@@ -137,7 +172,7 @@ export default function App() {
                   borderRadius: 5, padding: "4px 12px", cursor: "pointer",
                   fontSize: 11, fontFamily: "inherit",
                 }}>
-                  {mode === "back3" ? "3-Digit (back3)" : "2-Digit (last2)"}
+                  {mode === "back3" ? "3-Digit (back3)" : "★ 2-Digit (last2)"}
                 </button>
               ))}
             </div>
