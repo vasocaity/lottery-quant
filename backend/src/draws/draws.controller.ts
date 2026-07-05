@@ -24,7 +24,7 @@ export class DrawsController {
   }
 
   @Post('import')
-  bulk(@Body() dto: { items: { date: string; back3: string; last2?: string }[] }) {
+  bulk(@Body() dto: { items: { date: string; back3: string; last2?: string; firstPrize?: string }[] }) {
     return this.draws.bulkImport(dto.items);
   }
 }

@@ -32,7 +32,7 @@ export class DrawsService {
     }));
   }
 
-  async bulkImport(items: { date: string; back3: string; last2?: string }[]) {
+  async bulkImport(items: { date: string; back3: string; last2?: string; firstPrize?: string }[]) {
     let count = 0;
     for (const it of items) {
       await this.create(it);

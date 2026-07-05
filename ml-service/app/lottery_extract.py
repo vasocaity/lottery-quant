@@ -44,9 +44,9 @@ def extract_draws(html: str) -> list[dict]:
     Each <div class="rowx"> row contains divs with class "row-hld"
     holding the prize numbers in this order:
         [0] first_prize  – 6-digit first prize
-        [1] last2        – last 2 digits
-        [2] back3        – last 3 digits
-        [3] front2       – first 2 digits  (sx-hide on mobile, always present)
+        [1] last2        – last 2 digits [2 ตัวบน]
+        [2] back3        – last 3 digits [3 ตัวบน]
+        [3] front2       – first 2 digits  [2 ตัวล่าง] (sx-hide on mobile, always present)
 
     The date is split across three plain colx divs (day / month-th / year-BE).
     """
@@ -102,11 +102,11 @@ def extract_draws(html: str) -> list[dict]:
         front2      = text_of(prize_divs[1])
 
         draws.append({
-            "date":        date_str,
-            "first_prize": first_prize,
-            "front2":      front2,
-            "back3":       back3,
-            "last2":       last2,
+            "date":       date_str,
+            "firstPrize": first_prize,
+            "front2":     front2,
+            "back3":      back3,
+            "last2":      last2,
         })
 
     return draws
