@@ -18,7 +18,7 @@ export default function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [backtest, setBacktest] = useState<any>(null);
   const [weights, setWeights] = useState({ lr: 0.25, rf: 0.4, gb: 0.35 });
-  const [newDraw, setNewDraw] = useState({ date: "", back3: "", last2: "" });
+  const [newDraw, setNewDraw] = useState({ date: "", back3: "", last2: "", firstPrize: "" });
 
   const { progress, livePrediction, connected } = useLiveUpdates();
 
@@ -73,13 +73,13 @@ export default function App() {
   const handleAddDraw = async () => {
     if (!newDraw.date || !newDraw.back3) return;
     setBusy("Adding draw + retraining...");
-    await api.addDraw(newDraw);
+    await api.addDraw({ ...newDraw, firstPrize: newDraw.firstPrize || undefined });
     await loadDraws();
     await api.trainModel();
     const res = await api.runPrediction(20);
     setTop20(res.items);
     setLast2Top10(res.last2_items ?? []);
-    setNewDraw({ date: "", back3: "", last2: "" });
+    setNewDraw({ date: "", back3: "", last2: "", firstPrize: "" });
     await loadHitRate();
     setBusy(null);
   };
@@ -87,6 +87,61 @@ export default function App() {
   const sc = (s: number) => (s >= 0.65 ? "#00ff88" : s >= 0.5 ? "#ffcc00" : "#ff9f43");
   const pct = (s: number) => (s * 100).toFixed(1);
   const last = draws[draws.length - 1];
+
+  const renderBack3Grid = (items: PredictItem[], emptyMsg = "No 3-digit predictions yet.") => (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 10 }}>
+      {items.length === 0 && <div style={{ color: "#6a8ab8", fontSize: 12 }}>{emptyMsg}</div>}
+      {items.map((item, idx) => (
+        <div key={item.number} style={{ background: "#0a1628", border: `1px solid ${idx < 3 ? "#2a5a8b" : "#1a3a6b"}`, borderRadius: 10, padding: "12px 14px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 26, fontWeight: 900, color: sc(item.score), letterSpacing: 3 }}>{item.number}</span>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ color: sc(item.score), fontWeight: 700 }}>{pct(item.score)}</div>
+              <div style={{ fontSize: 8, color: "#6a8ab8" }}>/100</div>
+            </div>
+          </div>
+          <span style={{ fontSize: 9, color: "#4a9eff" }}>{item.confidence}</span>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, marginTop: 8 }}>
+            {[["LR", item.lr_score], ["RF", item.rf_score], ["GB", item.gb_score]].map(([l, v]) => (
+              <div key={l as string} style={{ background: "#050d1a", borderRadius: 4, padding: "3px 0", textAlign: "center" }}>
+                <div style={{ color: "#6a8ab8", fontSize: 8 }}>{l}</div>
+                <div style={{ color: sc(v as number), fontSize: 11, fontWeight: 700 }}>{pct(v as number)}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 8 }}>
+            {item.top_features.slice(0, 3).map((f) => (
+              <div key={f.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#6a8ab8" }}>
+                <span>▸ {f.name.replace("f_", "")}</span>
+                <span style={{ color: "#4a9eff" }}>{(f.importance * 100).toFixed(1)}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const renderLast2Grid = (items: Last2Item[], emptyMsg = "No 2-digit predictions yet.") => (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 10 }}>
+      {items.length === 0 && <div style={{ color: "#6a8ab8", fontSize: 12 }}>{emptyMsg}</div>}
+      {items.map((item, idx) => (
+        <div key={item.number} style={{ background: "#0a1628", border: `1px solid ${idx < 3 ? "#2a5a8b" : "#1a3a6b"}`, borderRadius: 10, padding: "12px 14px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 32, fontWeight: 900, color: sc(item.score), letterSpacing: 4 }}>{item.number}</span>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ color: sc(item.score), fontWeight: 700 }}>{pct(item.score)}</div>
+              <div style={{ fontSize: 8, color: "#6a8ab8" }}>/100</div>
+            </div>
+          </div>
+          <div style={{ marginTop: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 9, color: "#4a9eff" }}>{item.confidence}</span>
+            <span style={{ fontSize: 9, color: "#6a8ab8" }}>#{item.rank}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 
   return (
     <div style={{ background: "#050a14", minHeight: "100vh", color: "#e0e8ff", fontFamily: "'Courier New',monospace" }}>
@@ -177,60 +232,9 @@ export default function App() {
               ))}
             </div>
 
-            {rankingMode === "back3" && (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 10 }}>
-                {top20.length === 0 && <div style={{ color: "#6a8ab8", fontSize: 12 }}>No predictions yet — click "Train + Predict".</div>}
-                {top20.map((item, idx) => (
-                  <div key={item.number} style={{ background: "#0a1628", border: `1px solid ${idx < 3 ? "#2a5a8b" : "#1a3a6b"}`, borderRadius: 10, padding: "12px 14px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 26, fontWeight: 900, color: sc(item.score), letterSpacing: 3 }}>{item.number}</span>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ color: sc(item.score), fontWeight: 700 }}>{pct(item.score)}</div>
-                        <div style={{ fontSize: 8, color: "#6a8ab8" }}>/100</div>
-                      </div>
-                    </div>
-                    <span style={{ fontSize: 9, color: "#4a9eff" }}>{item.confidence}</span>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, marginTop: 8 }}>
-                      {[["LR", item.lr_score], ["RF", item.rf_score], ["GB", item.gb_score]].map(([l, v]) => (
-                        <div key={l as string} style={{ background: "#050d1a", borderRadius: 4, padding: "3px 0", textAlign: "center" }}>
-                          <div style={{ color: "#6a8ab8", fontSize: 8 }}>{l}</div>
-                          <div style={{ color: sc(v as number), fontSize: 11, fontWeight: 700 }}>{pct(v as number)}</div>
-                        </div>
-                      ))}
-                    </div>
-                    <div style={{ marginTop: 8 }}>
-                      {item.top_features.slice(0, 3).map((f) => (
-                        <div key={f.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#6a8ab8" }}>
-                          <span>▸ {f.name.replace("f_", "")}</span>
-                          <span style={{ color: "#4a9eff" }}>{(f.importance * 100).toFixed(1)}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            {rankingMode === "back3" && renderBack3Grid(top20, 'No predictions yet — click "Train + Predict".')}
 
-            {rankingMode === "last2" && (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 10 }}>
-                {last2Top10.length === 0 && <div style={{ color: "#6a8ab8", fontSize: 12 }}>No 2-digit predictions yet — click "Train + Predict".</div>}
-                {last2Top10.map((item, idx) => (
-                  <div key={item.number} style={{ background: "#0a1628", border: `1px solid ${idx < 3 ? "#2a5a8b" : "#1a3a6b"}`, borderRadius: 10, padding: "12px 14px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: 32, fontWeight: 900, color: sc(item.score), letterSpacing: 4 }}>{item.number}</span>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ color: sc(item.score), fontWeight: 700 }}>{pct(item.score)}</div>
-                        <div style={{ fontSize: 8, color: "#6a8ab8" }}>/100</div>
-                      </div>
-                    </div>
-                    <div style={{ marginTop: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: 9, color: "#4a9eff" }}>{item.confidence}</span>
-                      <span style={{ fontSize: 9, color: "#6a8ab8" }}>#{item.rank}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            {rankingMode === "last2" && renderLast2Grid(last2Top10, 'No 2-digit predictions yet — click "Train + Predict".')}
           </div>
         )}
 
@@ -269,6 +273,7 @@ export default function App() {
           <div style={{ background: "#0a1628", border: "1px solid #1a3a6b", borderRadius: 10, padding: 14, maxWidth: 480 }}>
             <div style={{ display: "grid", gap: 10, marginBottom: 10 }}>
               <input type="date" value={newDraw.date} onChange={(e) => setNewDraw({ ...newDraw, date: e.target.value })} style={inp} />
+              <input placeholder="First prize 6-digit (e.g. 812523)" maxLength={6} value={newDraw.firstPrize} onChange={(e) => setNewDraw({ ...newDraw, firstPrize: e.target.value.replace(/\D/g, "") })} style={inp} />
               <input placeholder="3-digit (e.g. 523)" value={newDraw.back3} onChange={(e) => setNewDraw({ ...newDraw, back3: e.target.value })} style={inp} />
               <input placeholder="2-digit (e.g. 30)" value={newDraw.last2} onChange={(e) => setNewDraw({ ...newDraw, last2: e.target.value })} style={inp} />
             </div>
