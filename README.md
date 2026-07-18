@@ -97,6 +97,7 @@ open http://localhost:5173
 | GET | `/predictions/backtest` | Rolling-window validation report |
 | GET | `/predictions/feature-importance` | Global feature importances |
 | GET | `/predictions/latest` | Most recent persisted prediction |
+| GET | `/predictions/history?limit=30` | Past prediction runs (newest first) with hit/miss/pending outcome |
 
 WebSocket namespace `/live` emits: `training:progress`, `model:trained`, `prediction:new`.
 

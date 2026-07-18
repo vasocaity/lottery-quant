@@ -34,4 +34,9 @@ export class PredictionsController {
   hitRate() {
     return this.svc.hitRate();
   }
+
+  @Get('history')
+  history(@Query('limit') limit?: string) {
+    return this.svc.history(limit ? parseInt(limit, 10) : 30);
+  }
 }

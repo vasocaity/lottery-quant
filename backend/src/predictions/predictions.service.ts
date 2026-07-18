@@ -134,6 +134,42 @@ export class PredictionsService {
     return { last2: summarize(stats.last2), back3: summarize(stats.back3) };
   }
 
+  /**
+   * Lists past prediction runs, newest first, each paired with the actual
+   * draw that followed it (the "target"). Two-pointer walk over both lists
+   * (already sorted ascending) — draws never rewind as predictions advance,
+   * same technique as hitRate() above but walking draws instead of preds.
+   */
+  async history(limit = 30) {
+    const [draws, preds] = await Promise.all([
+      this.prisma.draw.findMany({ orderBy: { date: 'asc' } }),
+      this.prisma.prediction.findMany({ orderBy: { createdAt: 'asc' } }),
+    ]);
+
+    let i = 0;
+    const results = preds.map((pred) => {
+      while (i < draws.length && draws[i].date <= pred.createdAt) i++;
+      const target = draws[i] ?? null;
+
+      const stored = pred.items as any;
+      const back3Items = stored?.back3_items ?? (Array.isArray(stored) ? stored : []);
+      const last2Items = stored?.last2_items ?? [];
+
+      return {
+        id: pred.id,
+        createdAt: pred.createdAt,
+        modelVersionId: pred.modelVersionId,
+        back3Items,
+        last2Items,
+        target: target ? { date: target.date, back3: target.back3, last2: target.last2 } : null,
+        back3Hit: target ? back3Items.some((x: any) => x.number === target.back3) : null,
+        last2Hit: target && target.last2 ? last2Items.some((x: any) => x.number === target.last2) : null,
+      };
+    });
+
+    return results.reverse().slice(0, limit);
+  }
+
   /** Called after a new official draw is added: retrain + re-predict automatically. */
   async onNewDraw() {
     this.logger.log('New draw detected — retraining + re-predicting');
