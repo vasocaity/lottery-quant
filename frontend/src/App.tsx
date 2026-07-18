@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { api, type Draw, type PredictItem, type Last2Item, type HitRateReport } from "./api/client";
+import { api, type Draw, type PredictItem, type Last2Item, type HitRateReport, type PredictionHistoryItem } from "./api/client";
 import { useLiveUpdates } from "./hooks/useLiveUpdates";
 
 /**
@@ -15,6 +15,8 @@ export default function App() {
   const [tab, setTab] = useState("rankings");
   const [rankingMode, setRankingMode] = useState<"back3" | "last2">("last2");
   const [hitRate, setHitRate] = useState<HitRateReport | null>(null);
+  const [predHistory, setPredHistory] = useState<PredictionHistoryItem[]>([]);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [backtest, setBacktest] = useState<any>(null);
   const [weights, setWeights] = useState({ lr: 0.25, rf: 0.4, gb: 0.35 });
@@ -44,11 +46,16 @@ export default function App() {
     try { setHitRate(await api.hitRate()); } catch { /* backend may be older */ }
   }, []);
 
+  const loadPredictionHistory = useCallback(async () => {
+    setPredHistory(await api.predictionHistory());
+  }, []);
+
   useEffect(() => {
     loadDraws();
     loadLatest();
     loadHitRate();
-  }, [loadDraws, loadLatest, loadHitRate]);
+    loadPredictionHistory();
+  }, [loadDraws, loadLatest, loadHitRate, loadPredictionHistory]);
 
   const handleTrain = async () => {
     setBusy("Training models...");
@@ -59,6 +66,7 @@ export default function App() {
     const fi = await api.featureImportance();
     setWeights(fi.weights);
     await loadHitRate();
+    await loadPredictionHistory();
     setBusy(null);
   };
 
@@ -81,6 +89,7 @@ export default function App() {
     setLast2Top10(res.last2_items ?? []);
     setNewDraw({ date: "", back3: "", last2: "", firstPrize: "" });
     await loadHitRate();
+    await loadPredictionHistory();
     setBusy(null);
   };
 
@@ -182,9 +191,9 @@ export default function App() {
         </div>
 
         <nav style={{ display: "flex", gap: 2, marginBottom: 16, borderBottom: "1px solid #1a3a6b" }}>
-          {["rankings", "backtest", "history", "adddata"].map((t) => (
+          {["rankings", "backtest", "history", "predhistory", "adddata"].map((t) => (
             <button key={t} onClick={() => setTab(t)} style={tabBtn(tab === t)}>
-              {{ rankings: "📊 Rankings", backtest: "📈 Backtest", history: "📋 History", adddata: "➕ Add Draw" }[t]}
+              {{ rankings: "📊 Rankings", backtest: "📈 Backtest", history: "📋 History", predhistory: "🕘 Prediction History", adddata: "➕ Add Draw" }[t]}
             </button>
           ))}
         </nav>
@@ -266,6 +275,50 @@ export default function App() {
                 <span style={{ color: "#6a8ab8" }}>{d.last2}</span>
               </div>
             ))}
+          </div>
+        )}
+
+        {tab === "predhistory" && (
+          <div style={{ background: "#0a1628", border: "1px solid #1a3a6b", borderRadius: 10 }}>
+            {predHistory.length === 0 && (
+              <div style={{ padding: 14, color: "#6a8ab8", fontSize: 12 }}>
+                No prediction runs yet — click "Train + Predict".
+              </div>
+            )}
+            {predHistory.map((run) => {
+              const badge = (hit: boolean | null) =>
+                hit === null
+                  ? { text: "… pending", color: "#6a8ab8" }
+                  : hit
+                  ? { text: "✓ hit", color: "#00ff88" }
+                  : { text: "✗ miss", color: "#ff6b6b" };
+              const b3 = badge(run.back3Hit);
+              const l2 = badge(run.last2Hit);
+              const isOpen = expandedId === run.id;
+              return (
+                <div key={run.id} style={{ borderTop: "1px solid #0d1f3c" }}>
+                  <div
+                    onClick={() => setExpandedId(isOpen ? null : run.id)}
+                    style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", alignItems: "center", gap: 10, padding: "8px 14px", fontSize: 11, cursor: "pointer" }}
+                  >
+                    <span style={{ color: "#e0e8ff" }}>{new Date(run.createdAt).toLocaleString()}</span>
+                    <span style={{ color: "#6a8ab8" }}>
+                      {run.target ? `→ ${run.target.date.slice(0, 10)} (${run.target.back3}/${run.target.last2 ?? "—"})` : "pending"}
+                    </span>
+                    <span style={{ color: b3.color }}>3D {b3.text}</span>
+                    <span style={{ color: l2.color }}>2D {l2.text}</span>
+                  </div>
+                  {isOpen && (
+                    <div style={{ padding: "0 14px 14px" }}>
+                      <div style={{ color: "#4a9eff", fontSize: 10, letterSpacing: 2, textTransform: "uppercase", margin: "8px 0" }}>2-Digit</div>
+                      {renderLast2Grid(run.last2Items)}
+                      <div style={{ color: "#4a9eff", fontSize: 10, letterSpacing: 2, textTransform: "uppercase", margin: "12px 0 8px" }}>3-Digit</div>
+                      {renderBack3Grid(run.back3Items)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
