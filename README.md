@@ -1,5 +1,8 @@
 # 🎯 Thai Lottery Quant Platform
 
+> **⚠️ Experiment only.** This is a personal experiment / learning project. It is not
+> financial, investment, or gambling advice, and it makes no guarantee of any outcome.
+
 A production-architecture quantitative analysis system for Thai Government Lottery
 3-digit (back-3) statistical ranking. **This is a statistical ranking tool, not a
 prediction system — lottery draws are random events.**
@@ -143,4 +146,4 @@ thai-lottery-quant/
 Lottery draws are independent random events. Historical patterns are not causal and
 provide no predictive certainty. Backtest "coverage" above the ~2% random baseline
 reflects statistical fit on past data only. This software is for educational and
-analytical purposes — never a basis for financial decisions.
+analytical purposes — **an experiment only**, never a basis for financial decisions.

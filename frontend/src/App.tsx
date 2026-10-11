@@ -97,11 +97,13 @@ export default function App() {
   const pct = (s: number) => (s * 100).toFixed(1);
   const last = draws[draws.length - 1];
 
-  const renderBack3Grid = (items: PredictItem[], emptyMsg = "No 3-digit predictions yet.") => (
+  const renderBack3Grid = (items: PredictItem[], emptyMsg = "No 3-digit predictions yet.", targetNumber?: string | null) => (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 10 }}>
       {items.length === 0 && <div style={{ color: "#6a8ab8", fontSize: 12 }}>{emptyMsg}</div>}
-      {items.map((item, idx) => (
-        <div key={item.number} style={{ background: "#0a1628", border: `1px solid ${idx < 3 ? "#2a5a8b" : "#1a3a6b"}`, borderRadius: 10, padding: "12px 14px" }}>
+      {items.map((item, idx) => {
+        const isHit = !!targetNumber && item.number === targetNumber;
+        return (
+        <div key={item.number} style={{ background: isHit ? "#0a2818" : "#0a1628", border: `1px solid ${isHit ? "#00ff88" : idx < 3 ? "#2a5a8b" : "#1a3a6b"}`, borderRadius: 10, padding: "12px 14px", boxShadow: isHit ? "0 0 10px rgba(0,255,136,0.4)" : undefined }}>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             <span style={{ fontSize: 26, fontWeight: 900, color: sc(item.score), letterSpacing: 3 }}>{item.number}</span>
             <div style={{ textAlign: "right" }}>
@@ -109,6 +111,7 @@ export default function App() {
               <div style={{ fontSize: 8, color: "#6a8ab8" }}>/100</div>
             </div>
           </div>
+          {isHit && <div style={{ fontSize: 9, fontWeight: 700, color: "#00ff88", marginTop: 2 }}>🎯 ACTUAL RESULT (rank #{item.rank})</div>}
           <span style={{ fontSize: 9, color: "#4a9eff" }}>{item.confidence}</span>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, marginTop: 8 }}>
             {[["LR", item.lr_score], ["RF", item.rf_score], ["GB", item.gb_score]].map(([l, v]) => (
@@ -127,15 +130,18 @@ export default function App() {
             ))}
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 
-  const renderLast2Grid = (items: Last2Item[], emptyMsg = "No 2-digit predictions yet.") => (
+  const renderLast2Grid = (items: Last2Item[], emptyMsg = "No 2-digit predictions yet.", targetNumber?: string | null) => (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 10 }}>
       {items.length === 0 && <div style={{ color: "#6a8ab8", fontSize: 12 }}>{emptyMsg}</div>}
-      {items.map((item, idx) => (
-        <div key={item.number} style={{ background: "#0a1628", border: `1px solid ${idx < 3 ? "#2a5a8b" : "#1a3a6b"}`, borderRadius: 10, padding: "12px 14px" }}>
+      {items.map((item, idx) => {
+        const isHit = !!targetNumber && item.number === targetNumber;
+        return (
+        <div key={item.number} style={{ background: isHit ? "#0a2818" : "#0a1628", border: `1px solid ${isHit ? "#00ff88" : idx < 3 ? "#2a5a8b" : "#1a3a6b"}`, borderRadius: 10, padding: "12px 14px", boxShadow: isHit ? "0 0 10px rgba(0,255,136,0.4)" : undefined }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontSize: 32, fontWeight: 900, color: sc(item.score), letterSpacing: 4 }}>{item.number}</span>
             <div style={{ textAlign: "right" }}>
@@ -143,12 +149,14 @@ export default function App() {
               <div style={{ fontSize: 8, color: "#6a8ab8" }}>/100</div>
             </div>
           </div>
+          {isHit && <div style={{ fontSize: 9, fontWeight: 700, color: "#00ff88", marginTop: 2 }}>🎯 ACTUAL RESULT</div>}
           <div style={{ marginTop: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontSize: 9, color: "#4a9eff" }}>{item.confidence}</span>
             <span style={{ fontSize: 9, color: "#6a8ab8" }}>#{item.rank}</span>
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 
@@ -286,14 +294,16 @@ export default function App() {
               </div>
             )}
             {predHistory.map((run) => {
-              const badge = (hit: boolean | null) =>
+              const badge = (hit: boolean | null, rank?: number) =>
                 hit === null
                   ? { text: "… pending", color: "#6a8ab8" }
                   : hit
-                  ? { text: "✓ hit", color: "#00ff88" }
+                  ? { text: `✓ hit (rank #${rank})`, color: "#00ff88" }
                   : { text: "✗ miss", color: "#ff6b6b" };
-              const b3 = badge(run.back3Hit);
-              const l2 = badge(run.last2Hit);
+              const b3Rank = run.target ? run.back3Items.find((it) => it.number === run.target!.back3)?.rank : undefined;
+              const l2Rank = run.target?.last2 ? run.last2Items.find((it) => it.number === run.target!.last2)?.rank : undefined;
+              const b3 = badge(run.back3Hit, b3Rank);
+              const l2 = badge(run.last2Hit, l2Rank);
               const isOpen = expandedId === run.id;
               return (
                 <div key={run.id} style={{ borderTop: "1px solid #0d1f3c" }}>
@@ -311,9 +321,9 @@ export default function App() {
                   {isOpen && (
                     <div style={{ padding: "0 14px 14px" }}>
                       <div style={{ color: "#4a9eff", fontSize: 10, letterSpacing: 2, textTransform: "uppercase", margin: "8px 0" }}>2-Digit</div>
-                      {renderLast2Grid(run.last2Items)}
+                      {renderLast2Grid(run.last2Items, undefined, run.target?.last2)}
                       <div style={{ color: "#4a9eff", fontSize: 10, letterSpacing: 2, textTransform: "uppercase", margin: "12px 0 8px" }}>3-Digit</div>
-                      {renderBack3Grid(run.back3Items)}
+                      {renderBack3Grid(run.back3Items, undefined, run.target?.back3)}
                     </div>
                   )}
                 </div>
